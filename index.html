@@ -1,0 +1,1990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  ================================================================
+  PUTTING LAB v1.3.3
+  Single-file putting practice tracker
+  Service Worker: sw.js (must be in same directory)
+  Storage key: putting_lab_data
+  ================================================================
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Putting Lab</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#F7F6F2">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Putting Lab">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+
+<style>
+  /* ── TOKENS ─────────────────────────────────────────── */
+  :root {
+    --bg:        #F7F6F2;
+    --surface:   #FFFFFF;
+    --border:    #E4E1D8;
+    --text:      #1A1916;
+    --muted:     #8A8780;
+    --accent:    #2D6A4F;
+    --accent-lt: #D8EDE4;
+    --gold:      #C9973A;
+    --gold-lt:   #FAF0DC;
+    --danger:    #C0392B;
+    --danger-lt: #FDECEA;
+    --r:         12px;
+    --r-sm:      8px;
+    --shadow:    0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,.10);
+  }
+
+  /* ── RESET ───────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 16px; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    max-width: 480px;
+    margin: 0 auto;
+    padding-bottom: 80px;
+    font-weight: 400;
+  }
+  button { cursor: pointer; border: none; background: none; font-family: inherit; }
+  input, select, textarea { font-family: inherit; }
+
+  /* ── TYPOGRAPHY ──────────────────────────────────────── */
+  .serif { font-family: 'DM Serif Display', serif; }
+  .mono  { font-family: 'DM Mono', monospace; }
+  h1 { font-family: 'DM Serif Display', serif; font-size: 2rem; line-height: 1.1; }
+  h2 { font-family: 'DM Serif Display', serif; font-size: 1.4rem; }
+  h3 { font-family: 'DM Sans', sans-serif; font-weight: 500; font-size: 1rem; }
+
+  /* ── LAYOUT ──────────────────────────────────────────── */
+  .screen { display: none; padding: 0 16px; }
+  .screen.active { display: block; }
+  .card {
+    background: var(--surface);
+    border-radius: var(--r);
+    border: 1px solid var(--border);
+    padding: 20px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow);
+  }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .col { display: flex; flex-direction: column; gap: 8px; }
+  .spacer { flex: 1; }
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+  /* ── TOP BAR ─────────────────────────────────────────── */
+  .topbar {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--bg);
+    padding: 16px 16px 8px;
+    border-bottom: 1px solid var(--border);
+    margin: 0 -16px 20px;
+  }
+  .topbar-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+  }
+  .back-btn {
+    display: flex; align-items: center; gap: 6px;
+    color: var(--accent); font-size: .9rem; font-weight: 500;
+    padding: 4px 0;
+  }
+  .back-btn svg { width: 16px; height: 16px; }
+
+  /* ── NAV ─────────────────────────────────────────────── */
+  .nav {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 480px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+    z-index: 200;
+  }
+  .nav-btn {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; gap: 3px;
+    font-size: .68rem; font-weight: 500;
+    color: var(--muted);
+    padding: 4px 0;
+    transition: color .15s;
+  }
+  .nav-btn.active { color: var(--accent); }
+  .nav-btn svg { width: 22px; height: 22px; }
+
+  /* ── HOME SCREEN ─────────────────────────────────────── */
+  .home-hero {
+    padding: 28px 0 20px;
+    text-align: center;
+  }
+  .home-hero .subtitle {
+    color: var(--muted); font-size: .85rem;
+    margin-top: 4px; font-family: 'DM Mono', monospace;
+    letter-spacing: .04em;
+  }
+  .home-version {
+    font-family: 'DM Mono', monospace;
+    font-size: .72rem; color: var(--muted);
+    margin-top: 6px;
+  }
+  .drill-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .drill-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 18px 16px;
+    cursor: pointer;
+    transition: box-shadow .15s, transform .12s;
+    box-shadow: var(--shadow);
+    text-align: left;
+  }
+  .drill-card:active { transform: scale(.97); }
+  .icon { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+  .drill-card .drill-icon { color: var(--accent); margin-bottom: 10px; display: inline-flex; }
+  .drill-card .drill-icon svg { width: 28px; height: 28px; }
+  .ref-icon { color: var(--gold); }
+  .inline-icon { display:inline-flex; vertical-align:-3px; margin-right:8px; color: currentColor; }
+  .inline-icon svg { width:18px; height:18px; }
+  .drill-card .drill-name { font-weight: 500; font-size: .95rem; line-height: 1.3; }
+  .drill-card .drill-desc { font-size: .78rem; color: var(--muted); margin-top: 4px; }
+  .drill-card.accent-border { border-left: 3px solid var(--accent); }
+  .drill-card.gold-border   { border-left: 3px solid var(--gold); }
+
+
+  .hero-icon {
+    color: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+  .hero-icon svg { width: 32px; height: 32px; }
+
+  /* ── STAT PILLS ──────────────────────────────────────── */
+  .stat-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .stat-pill {
+    flex: 1; background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 12px 10px; text-align: center;
+  }
+  .stat-pill .val {
+    font-family: 'DM Mono', monospace;
+    font-size: 1.4rem; font-weight: 500;
+    color: var(--accent);
+  }
+  .stat-pill .lbl { font-size: .72rem; color: var(--muted); margin-top: 2px; }
+
+  /* ── PUTTOUT GAME ────────────────────────────────────── */
+  .diff-selector { display: flex; gap: 8px; margin-bottom: 16px; }
+  .diff-btn {
+    flex: 1; padding: 10px 4px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-sm);
+    font-size: .82rem; font-weight: 500;
+    color: var(--muted);
+    background: var(--surface);
+    transition: all .15s;
+    text-align: center;
+  }
+  .diff-btn.selected {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-lt);
+  }
+
+  .game-display {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 24px 20px;
+    text-align: center;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow);
+  }
+  .game-score {
+    font-family: 'DM Serif Display', serif;
+    font-size: 4rem; line-height: 1;
+    color: var(--text);
+  }
+  .game-score-label { font-size: .8rem; color: var(--muted); margin-top: 4px; }
+  .game-shots-left {
+    font-family: 'DM Mono', monospace;
+    font-size: .85rem; color: var(--muted);
+    margin-top: 12px;
+  }
+  .shots-bar {
+    display: flex; gap: 3px; flex-wrap: wrap;
+    justify-content: center; margin-top: 10px;
+  }
+  .shot-dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    transition: background .2s;
+  }
+  .shot-dot.perfect { background: var(--accent); border-color: var(--accent); }
+  .shot-dot.holed   { background: var(--gold);   border-color: var(--gold); }
+  .shot-dot.miss    { background: var(--border);  border-color: var(--border); }
+
+  .tap-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .tap-btn {
+    padding: 20px 8px;
+    border-radius: var(--r);
+    border: 1.5px solid var(--border);
+    font-size: .82rem; font-weight: 500;
+    background: var(--surface);
+    transition: transform .1s, box-shadow .1s;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .tap-btn:active { transform: scale(.94); box-shadow: none; }
+  .tap-btn .tap-pts {
+    font-family: 'DM Serif Display', serif;
+    font-size: 2rem; display: block;
+    margin-bottom: 4px;
+  }
+  .tap-btn.t-perfect { border-color: var(--accent); background: var(--accent-lt); }
+  .tap-btn.t-perfect .tap-pts { color: var(--accent); }
+  .tap-btn.t-holed   { border-color: var(--gold);   background: var(--gold-lt); }
+  .tap-btn.t-holed   .tap-pts { color: var(--gold); }
+  .tap-btn.t-miss    { border-color: var(--border);  background: var(--bg); }
+  .tap-btn.t-miss    .tap-pts { color: var(--muted); }
+
+  .undo-btn {
+    width: 100%; padding: 12px;
+    border: 1.5px solid #e7c7c3;
+    border-radius: var(--r-sm);
+    color: var(--danger); font-size: .85rem;
+    background: var(--surface);
+    margin-top: 12px;
+  }
+
+  /* ── FEEL RATING ─────────────────────────────────────── */
+  .feel-row { display: flex; gap: 8px; justify-content: center; }
+  .feel-btn {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    font-size: 1.2rem;
+    background: var(--surface);
+    transition: transform .12s, border-color .12s;
+  }
+  .feel-btn.selected { border-color: var(--accent); transform: scale(1.15); }
+
+  /* ── LEADERBOARD ─────────────────────────────────────── */
+  .lb-row {
+    display: flex; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+    gap: 12px;
+  }
+  .lb-row:last-child { border-bottom: none; }
+  .lb-rank {
+    font-family: 'DM Mono', monospace;
+    font-size: .8rem; color: var(--muted);
+    width: 24px; text-align: right;
+  }
+  .lb-rank.top { color: var(--gold); font-weight: 500; }
+  .lb-score {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.3rem; color: var(--accent);
+    min-width: 44px;
+  }
+  .lb-meta { font-size: .78rem; color: var(--muted); }
+  .lb-split {
+    font-size: .72rem; color: var(--muted);
+    margin-top: 4px; line-height: 1.35;
+  }
+  .lb-split strong { color: var(--text); font-weight: 500; }
+  .lb-pct {
+    margin-left: auto;
+    font-family: 'DM Mono', monospace;
+    font-size: .8rem; color: var(--muted);
+  }
+
+  /* ── PRESSURE LADDER ─────────────────────────────────── */
+  .ladder-display {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 24px 20px;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .ladder-level {
+    font-family: 'DM Serif Display', serif;
+    font-size: 2.4rem; color: var(--text);
+  }
+  .ladder-subtitle { font-size: .85rem; color: var(--muted); margin-top: 4px; }
+  .ladder-streak {
+    display: flex; justify-content: center; gap: 10px;
+    margin-top: 18px;
+  }
+  .streak-dot {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    font-size: .9rem;
+    transition: all .2s;
+  }
+  .streak-dot.made { background: var(--accent); border-color: var(--accent); }
+  .streak-dot.made::after { content: '✓'; color: white; font-size: .75rem; }
+  .ladder-steps {
+    display: flex; justify-content: center; gap: 6px;
+    margin-top: 16px; flex-wrap: wrap;
+  }
+  .ladder-step {
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1.5px solid var(--border);
+    font-size: .8rem; font-weight: 500;
+    color: var(--muted);
+    background: var(--bg);
+  }
+  .ladder-step.current { border-color: var(--accent); color: var(--accent); background: var(--accent-lt); }
+  .ladder-step.done    { border-color: var(--accent); color: var(--accent); background: var(--accent); color: white; }
+
+  .ladder-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .ladder-make {
+    padding: 22px;
+    border-radius: var(--r);
+    border: 1.5px solid var(--accent);
+    background: var(--accent-lt);
+    color: var(--accent);
+    font-size: 1rem; font-weight: 500;
+    box-shadow: var(--shadow);
+    transition: transform .1s;
+  }
+  .ladder-make:active { transform: scale(.95); }
+  .ladder-miss {
+    padding: 22px;
+    border-radius: var(--r);
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 1rem; font-weight: 500;
+    transition: transform .1s;
+  }
+  .ladder-miss:active { transform: scale(.95); }
+
+  /* ── MAKE % TRACKER ──────────────────────────────────── */
+  .dist-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .dist-tab {
+    flex: 1; padding: 10px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-sm);
+    font-size: .85rem; font-weight: 500;
+    color: var(--muted);
+    background: var(--surface);
+    text-align: center;
+    transition: all .15s;
+  }
+  .dist-tab.active { border-color: var(--accent); color: var(--accent); background: var(--accent-lt); }
+  .make-balls { display: flex; gap: 10px; justify-content: center; margin: 20px 0; }
+  .make-ball {
+    width: 52px; height: 52px; border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--bg);
+    font-size: 1.4rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s;
+    cursor: pointer;
+  }
+  .make-ball.made { background: var(--accent); border-color: var(--accent); }
+  .make-ball.made::after { content: '⚪'; filter: brightness(10); }
+  .make-ball:not(.made)::after { content: '⚫'; opacity: .3; }
+
+  /* ── MINI CHART ──────────────────────────────────────── */
+  .mini-chart { height: 80px; display: flex; align-items: flex-end; gap: 4px; padding: 0 4px; }
+  .chart-bar {
+    flex: 1; border-radius: 3px 3px 0 0;
+    background: var(--accent-lt);
+    border-top: 2px solid var(--accent);
+    min-height: 4px;
+    transition: height .3s ease;
+    position: relative;
+  }
+  .chart-bar:hover .chart-tip {
+    opacity: 1;
+  }
+  .chart-tip {
+    position: absolute; top: -28px; left: 50%; transform: translateX(-50%);
+    background: var(--text); color: white;
+    font-size: .65rem; font-family: 'DM Mono', monospace;
+    padding: 2px 5px; border-radius: 3px;
+    white-space: nowrap; opacity: 0; pointer-events: none;
+    transition: opacity .15s;
+  }
+
+  /* ── REFERENCE SECTION ───────────────────────────────── */
+  .ref-tab-row { display: flex; gap: 6px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 2px; }
+  .ref-tab {
+    flex-shrink: 0; padding: 8px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    font-size: .8rem; font-weight: 500;
+    color: var(--muted);
+    background: var(--surface);
+    transition: all .15s;
+  }
+  .ref-tab.active { border-color: var(--accent); color: var(--accent); background: var(--accent-lt); }
+  .ref-content { display: none; }
+  .ref-content.active { display: block; }
+
+  .checklist-item {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+  }
+  .checklist-item:last-child { border-bottom: none; }
+  .check-circle {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--border);
+    flex-shrink: 0; margin-top: 1px;
+    cursor: pointer; transition: all .15s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .check-circle.checked { background: var(--accent); border-color: var(--accent); }
+  .check-circle.checked::after { content: '✓'; color: white; font-size: .7rem; }
+  .check-label { font-size: .88rem; line-height: 1.5; }
+  .check-sub { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+
+  .tip-block {
+    background: var(--accent-lt);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    font-size: .85rem;
+    line-height: 1.6;
+  }
+  .tip-block strong { font-weight: 500; }
+  .tip-block.gold { background: var(--gold-lt); border-color: var(--gold); }
+
+  /* ── SESSION LOG ─────────────────────────────────────── */
+  .log-entry {
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+  }
+  .log-entry:last-child { border-bottom: none; }
+  .log-drill { font-size: .78rem; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+  .log-result { font-size: 1rem; font-weight: 500; margin: 2px 0; }
+  .log-meta { font-family: 'DM Mono', monospace; font-size: .75rem; color: var(--muted); }
+  .feel-emoji { margin-left: 6px; }
+
+  /* ── SETTINGS ────────────────────────────────────────── */
+  .settings-row {
+    display: flex; align-items: center;
+    padding: 14px 0; border-bottom: 1px solid var(--border);
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-label { flex: 1; font-size: .9rem; }
+  .settings-sub { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+  .action-btn {
+    padding: 10px 16px;
+    border-radius: var(--r-sm);
+    border: 1.5px solid var(--accent);
+    color: var(--accent);
+    font-size: .85rem; font-weight: 500;
+    background: var(--accent-lt);
+    transition: transform .1s;
+  }
+  .action-btn:active { transform: scale(.96); }
+  .action-btn.danger {
+    border-color: var(--danger);
+    color: var(--danger);
+    background: var(--danger-lt);
+  }
+
+  /* ── PRIMARY BTN ─────────────────────────────────────── */
+  .btn-primary {
+    width: 100%; padding: 16px;
+    background: var(--accent);
+    color: white; font-size: 1rem; font-weight: 500;
+    border-radius: var(--r);
+    border: none;
+    box-shadow: var(--shadow);
+    transition: transform .1s, box-shadow .1s;
+  }
+  .btn-primary:active { transform: scale(.98); box-shadow: none; }
+  .btn-primary:disabled { opacity: .4; pointer-events: none; }
+
+  /* ── FINISH OVERLAY ──────────────────────────────────── */
+  .overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(247,246,242,.95);
+    z-index: 300; padding: 40px 24px;
+    flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+  }
+  .overlay.show { display: flex; }
+  .overlay-score {
+    font-family: 'DM Serif Display', serif;
+    font-size: 5rem; line-height: 1;
+    color: var(--accent);
+  }
+  .overlay-label { color: var(--muted); margin: 8px 0 24px; }
+  .overlay-breakdown { margin-bottom: 24px; }
+  .overlay-bd-row {
+    display: flex; justify-content: space-between;
+    padding: 6px 0; border-bottom: 1px solid var(--border);
+    font-size: .88rem;
+  }
+  .overlay-bd-row:last-child { border-bottom: none; }
+
+  /* ── TOAST ───────────────────────────────────────────── */
+  .toast {
+    position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--text); color: white;
+    padding: 10px 20px; border-radius: 20px;
+    font-size: .85rem; opacity: 0;
+    transition: all .3s; z-index: 400;
+    white-space: nowrap; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── ANIMATIONS ──────────────────────────────────────── */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .screen.active > * { animation: fadeIn .25s ease both; }
+  .screen.active > *:nth-child(2) { animation-delay: .04s; }
+  .screen.active > *:nth-child(3) { animation-delay: .08s; }
+  .screen.active > *:nth-child(4) { animation-delay: .12s; }
+
+  /* ── UTILITY ─────────────────────────────────────────── */
+  .text-center { text-align: center; }
+  .text-muted { color: var(--muted); }
+  .text-accent { color: var(--accent); }
+  .text-sm { font-size: .85rem; }
+  .mt-8 { margin-top: 8px; }
+  .mt-12 { margin-top: 12px; }
+  .mt-16 { margin-top: 16px; }
+  .mb-8 { margin-bottom: 8px; }
+  .mb-12 { margin-bottom: 12px; }
+  .hidden { display: none !important; }
+  .badge {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 10px; font-size: .72rem; font-weight: 500;
+  }
+  .badge-green { background: var(--accent-lt); color: var(--accent); }
+  .badge-gold  { background: var(--gold-lt);   color: var(--gold); }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════ HOME -->
+<div id="screen-home" class="screen active">
+  <div class="home-hero">
+    <h1 class="serif">Putting Lab</h1>
+    <div class="subtitle">Indoor Practice Tracker</div>
+    <div class="home-version mono" id="home-version">v1.0.0</div>
+  </div>
+
+  <div class="stat-row" id="home-stats">
+    <div class="stat-pill">
+      <div class="val" id="stat-sessions">0</div>
+      <div class="lbl">Sessions</div>
+    </div>
+    <div class="stat-pill">
+      <div class="val" id="stat-best">—</div>
+      <div class="lbl">Best Score</div>
+    </div>
+    <div class="stat-pill">
+      <div class="val" id="stat-streak">—</div>
+      <div class="lbl">Ladder PB</div>
+    </div>
+  </div>
+
+  <div class="drill-grid">
+    <div class="drill-card accent-border" onclick="nav('puttout')">
+      <div class="drill-icon"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
+      <div class="drill-name">PuttOut Game</div>
+      <div class="drill-desc">20 putts · 3 difficulty modes</div>
+    </div>
+    <div class="drill-card accent-border" onclick="nav('ladder')">
+      <div class="drill-icon"><svg class="icon" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+      <div class="drill-name">Pressure Ladder</div>
+      <div class="drill-desc">3–6ft · 3 in a row</div>
+    </div>
+    <div class="drill-card accent-border" onclick="nav('make-pct')">
+      <div class="drill-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></div>
+      <div class="drill-name">Make % Tracker</div>
+      <div class="drill-desc">3 · 4.5 · 6ft baselines</div>
+    </div>
+    <div class="drill-card gold-border" onclick="nav('reference')">
+      <div class="drill-icon ref-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+      <div class="drill-name">Drill Reference</div>
+      <div class="drill-desc">Gates · mirror · setup</div>
+    </div>
+  </div>
+
+  <div class="card mt-12" id="home-recent" style="display:none">
+    <h3 class="mb-8">Recent</h3>
+    <div id="home-recent-list"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ PUTTOUT GAME -->
+<div id="screen-puttout" class="screen">
+  <div class="topbar">
+    <div class="row">
+      <button class="back-btn" onclick="nav('home')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        Home
+      </button>
+      <span class="spacer"></span>
+      <span class="topbar-title">PuttOut Game</span>
+    </div>
+  </div>
+
+  <!-- Difficulty selector -->
+  <div id="puttout-setup">
+    <p class="text-sm text-muted mb-12">Choose your difficulty — each mode has its own leaderboard.</p>
+    <div class="diff-selector">
+      <button class="diff-btn selected" data-diff="open" onclick="selectDiff(this,'open')">
+        <div>Open</div><div style="font-size:.7rem;margin-top:2px">No gate</div>
+      </button>
+      <button class="diff-btn" data-diff="60mm" onclick="selectDiff(this,'60mm')">
+        <div>60mm gate</div><div style="font-size:.7rem;margin-top:2px">Warm-up</div>
+      </button>
+      <button class="diff-btn" data-diff="50mm" onclick="selectDiff(this,'50mm')">
+        <div>50mm gate</div><div style="font-size:.7rem;margin-top:2px">Tour test</div>
+      </button>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-8">Scoring</h3>
+      <div class="row mb-8">
+        <span class="badge badge-green">Perfect putt</span>
+        <span class="spacer"></span>
+        <span class="mono">3 pts</span>
+      </div>
+      <div class="row mb-8">
+        <span class="badge badge-gold">Holed</span>
+        <span class="spacer"></span>
+        <span class="mono">1 pt</span>
+      </div>
+      <div class="row mb-8">
+        <span style="font-size:.82rem;color:var(--muted)">Miss</span>
+        <span class="spacer"></span>
+        <span class="mono">0 pts</span>
+      </div>
+      <div class="row" id="gate-note" style="display:none">
+        <span style="font-size:.82rem;color:var(--muted)">Gate clip</span>
+        <span class="spacer"></span>
+        <span class="mono">0 pts</span>
+      </div>
+      <div class="divider"></div>
+      <div class="row">
+        <span class="text-sm text-muted">Max possible</span>
+        <span class="spacer"></span>
+        <span class="mono text-accent" id="max-score-label">60 pts</span>
+      </div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div class="card">
+      <div class="row mb-8">
+        <h3>Top 5</h3>
+        <span class="spacer"></span>
+        <span class="text-sm text-muted" id="lb-diff-label">Open</span>
+      </div>
+      <div id="leaderboard-list">
+        <div class="text-sm text-muted text-center" style="padding:20px 0">No scores yet — play your first round!</div>
+      </div>
+    </div>
+
+    <button class="btn-primary mt-12" onclick="startPuttout()">Start Round</button>
+  </div>
+
+  <!-- Active game -->
+  <div id="puttout-game" class="hidden">
+    <div class="game-display">
+      <div class="game-score" id="g-score">0</div>
+      <div class="game-score-label">points</div>
+      <div class="game-shots-left"><span id="g-shots-left">20</span> putts remaining</div>
+      <div class="shots-bar" id="g-shots-bar"></div>
+    </div>
+
+    <div class="tap-btns">
+      <button class="tap-btn t-perfect" onclick="recordShot(3,'perfect')">
+        <span class="tap-pts">3</span>
+        <span>Perfect</span>
+      </button>
+      <button class="tap-btn t-holed" onclick="recordShot(1,'holed')">
+        <span class="tap-pts">1</span>
+        <span>Holed</span>
+      </button>
+      <button class="tap-btn t-miss" onclick="recordShot(0,'miss')">
+        <span class="tap-pts">0</span>
+        <span id="miss-label">Miss</span>
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <span class="text-sm text-muted">Perfect</span><span class="spacer"></span><span class="mono" id="g-ct-perfect">0</span>
+      </div>
+      <div class="row mt-8">
+        <span class="text-sm text-muted">Holed</span><span class="spacer"></span><span class="mono" id="g-ct-holed">0</span>
+      </div>
+      <div class="row mt-8">
+        <span class="text-sm text-muted">Miss / Gate</span><span class="spacer"></span><span class="mono" id="g-ct-miss">0</span>
+      </div>
+    </div>
+
+    <button class="undo-btn" onclick="undoShot()">
+      <span class="inline-icon"><svg class="icon" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></span> Undo last putt
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ PRESSURE LADDER -->
+<div id="screen-ladder" class="screen">
+  <div class="topbar">
+    <div class="row">
+      <button class="back-btn" onclick="nav('home')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        Home
+      </button>
+      <span class="spacer"></span>
+      <span class="topbar-title">Pressure Ladder</span>
+    </div>
+  </div>
+
+  <div id="ladder-setup">
+    <div class="card text-center">
+      <span class="hero-icon"><svg class="icon" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span>
+      <h2 class="mb-8">Pressure Ladder</h2>
+      <p class="text-sm text-muted">Hole 3 in a row at each distance to advance. Miss? Drop back one level. Complete all four levels to finish.</p>
+    </div>
+    <div class="card">
+      <h3 class="mb-12">The Levels</h3>
+      <div class="row mb-8"><span class="badge badge-green">Level 1</span><span class="spacer"></span><span class="text-sm">3 in a row from <strong>3ft</strong></span></div>
+      <div class="row mb-8"><span class="badge badge-green">Level 2</span><span class="spacer"></span><span class="text-sm">3 in a row from <strong>4ft</strong></span></div>
+      <div class="row mb-8"><span class="badge badge-green">Level 3</span><span class="spacer"></span><span class="text-sm">3 in a row from <strong>5ft</strong></span></div>
+      <div class="row"><span class="badge badge-gold">Level 4</span><span class="spacer"></span><span class="text-sm">3 in a row from <strong>6ft</strong></span></div>
+    </div>
+
+    <div class="card" id="ladder-pb-card">
+      <div class="row">
+        <span class="text-sm text-muted">Personal Best</span>
+        <span class="spacer"></span>
+        <span class="mono text-accent" id="ladder-pb-display">—</span>
+      </div>
+    </div>
+
+    <button class="btn-primary mt-12" onclick="startLadder()">Start Ladder</button>
+  </div>
+
+  <div id="ladder-game" class="hidden">
+    <div class="ladder-display">
+      <div class="ladder-steps" id="l-steps"></div>
+      <div class="ladder-level" id="l-dist">3ft</div>
+      <div class="ladder-subtitle" id="l-subtitle">3 in a row to advance</div>
+      <div class="ladder-streak" id="l-streak"></div>
+    </div>
+
+    <div class="ladder-btns">
+      <button class="ladder-make" onclick="ladderShot(true)">✓ Holed</button>
+      <button class="ladder-miss" onclick="ladderShot(false)">✗ Missed</button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <span class="text-sm text-muted">Total putts taken</span>
+        <span class="spacer"></span>
+        <span class="mono" id="l-total-putts">0</span>
+      </div>
+      <div class="row mt-8">
+        <span class="text-sm text-muted">Times dropped back</span>
+        <span class="spacer"></span>
+        <span class="mono" id="l-drops">0</span>
+      </div>
+    </div>
+
+    <button class="undo-btn mt-8" onclick="undoLadder()"><span class="inline-icon"><svg class="icon" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></span> Undo last putt</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ MAKE % TRACKER -->
+<div id="screen-make-pct" class="screen">
+  <div class="topbar">
+    <div class="row">
+      <button class="back-btn" onclick="nav('home')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        Home
+      </button>
+      <span class="spacer"></span>
+      <span class="topbar-title">Make % Tracker</span>
+    </div>
+  </div>
+
+  <p class="text-sm text-muted mb-12">5 putts from each distance. Tap each ball after you putt it to record make or miss. Log when done.</p>
+
+  <div class="dist-tabs">
+    <button class="dist-tab active" onclick="selectMakeDist(this,'3ft')">3ft</button>
+    <button class="dist-tab" onclick="selectMakeDist(this,'4.5ft')">4.5ft</button>
+    <button class="dist-tab" onclick="selectMakeDist(this,'6ft')">6ft</button>
+  </div>
+
+  <div class="card text-center">
+    <p class="text-sm text-muted mb-12" id="make-dist-label">Tap each ball — green = made, dark = missed</p>
+    <div class="make-balls" id="make-balls-row"></div>
+    <div style="font-family:'DM Mono',monospace;font-size:1.5rem;margin-top:16px" id="make-running">0 / 5</div>
+  </div>
+
+  <div class="card">
+    <h3 class="mb-12">This Session</h3>
+    <div class="row mb-8">
+      <span class="text-sm">3ft</span><span class="spacer"></span><span class="mono" id="make-result-3ft">—</span>
+    </div>
+    <div class="row mb-8">
+      <span class="text-sm">4.5ft</span><span class="spacer"></span><span class="mono" id="make-result-4hft">—</span>
+    </div>
+    <div class="row">
+      <span class="text-sm">6ft</span><span class="spacer"></span><span class="mono" id="make-result-6ft">—</span>
+    </div>
+  </div>
+
+  <!-- History chart -->
+  <div class="card" id="make-history-card" style="display:none">
+    <h3 class="mb-12">Make % History</h3>
+    <div class="dist-tabs" style="margin-bottom:8px">
+      <button class="dist-tab active" onclick="selectChartDist(this,'3ft')">3ft</button>
+      <button class="dist-tab" onclick="selectChartDist(this,'4.5ft')">4.5ft</button>
+      <button class="dist-tab" onclick="selectChartDist(this,'6ft')">6ft</button>
+    </div>
+    <div class="mini-chart" id="make-chart"></div>
+    <div style="font-size:.72rem;color:var(--muted);text-align:center;margin-top:4px">Last 10 sessions</div>
+  </div>
+
+  <button class="btn-primary mt-12" id="make-log-btn" onclick="logMakePct()" disabled>Log Session</button>
+</div>
+
+<!-- ══════════════════════════════════════ REFERENCE -->
+<div id="screen-reference" class="screen">
+  <div class="topbar">
+    <div class="row">
+      <button class="back-btn" onclick="nav('home')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        Home
+      </button>
+      <span class="spacer"></span>
+      <span class="topbar-title">Drill Reference</span>
+    </div>
+  </div>
+
+  <div class="ref-tab-row">
+    <button class="ref-tab active" onclick="selectRef(this,'mirror')">Mirror Setup</button>
+    <button class="ref-tab" onclick="selectRef(this,'gate')">Gate Drills</button>
+    <button class="ref-tab" onclick="selectRef(this,'ladder-ref')">Ladder Guide</button>
+    <button class="ref-tab" onclick="selectRef(this,'puttout-ref')">PuttOut Tips</button>
+  </div>
+
+  <!-- MIRROR -->
+  <div class="ref-content active" id="ref-mirror">
+    <div class="card">
+      <h3 class="mb-12">Pre-Session Mirror Checklist</h3>
+      <p class="text-sm text-muted mb-12">Work through this before every session. Tap to check each point off.</p>
+      <div id="mirror-checklist">
+        <div class="checklist-item">
+          <div class="check-circle" onclick="toggleCheck(this)"></div>
+          <div>
+            <div class="check-label"><strong>Eyes over the ball</strong></div>
+            <div class="check-sub">Your right eye should sit directly over the ball or just inside the line. As a right-eye dominant player, being too far inside causes you to aim right. Use the mirror to confirm your eye line is true.</div>
+          </div>
+        </div>
+        <div class="checklist-item">
+          <div class="check-circle" onclick="toggleCheck(this)"></div>
+          <div>
+            <div class="check-label"><strong>Shoulder alignment</strong></div>
+            <div class="check-sub">With a natural arc stroke, players commonly aim the shoulders right of target. Check that your shoulders are parallel to the target line — the mirror should show both shoulders level and square.</div>
+          </div>
+        </div>
+        <div class="checklist-item">
+          <div class="check-circle" onclick="toggleCheck(this)"></div>
+          <div>
+            <div class="check-label"><strong>Face angle at address</strong></div>
+            <div class="check-sub">The DS72 sight line is strong — use it as your guide. The face should be square at address. Even a slight open face at address will compound through your arc.</div>
+          </div>
+        </div>
+        <div class="checklist-item">
+          <div class="check-circle" onclick="toggleCheck(this)"></div>
+          <div>
+            <div class="check-label"><strong>Ball position</strong></div>
+            <div class="check-sub">Ball should be just forward of centre — roughly inside left eye. Too far forward opens the face through impact; too far back closes it.</div>
+          </div>
+        </div>
+        <div class="checklist-item">
+          <div class="check-circle" onclick="toggleCheck(this)"></div>
+          <div>
+            <div class="check-label"><strong>Grip pressure</strong></div>
+            <div class="check-sub">Rate it 3–4 out of 10. Light enough to feel the putter head, firm enough for control. Tight grip kills feel and promotes manipulation. Breathe out before you stroke.</div>
+          </div>
+        </div>
+        <div class="checklist-item">
+          <div class="check-circle" onclick="toggleCheck(this)"></div>
+          <div>
+            <div class="check-label"><strong>Posture and stillness</strong></div>
+            <div class="check-sub">Head and lower body must stay completely still through impact. The mirror will show any head lift or sway. Practise with your nose pointed at the ball until after the ball has rolled 12 inches.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip-block gold">
+      <strong>Arc stroke note:</strong> Your natural arc means the face rotates open on the backswing and closes through impact — this is correct. Don't force a straight-back-straight-through path. The key is returning the face to square at impact, not eliminating the arc.
+    </div>
+    <div class="tip-block">
+      <strong>Right-eye dominant tip:</strong> Dominant eye players tend to set up slightly inside the ball. If you're consistently missing right, re-check eye position first before adjusting your aim.
+    </div>
+  </div>
+
+  <!-- GATE -->
+  <div class="ref-content" id="ref-gate">
+
+    <!-- 60mm -->
+    <div class="card">
+      <div class="row mb-4">
+        <h3>60mm Gate</h3>
+        <span class="spacer"></span>
+        <span class="badge badge-green">Warm-up</span>
+      </div>
+      <p class="text-sm text-muted mb-12" style="margin-top:6px">Rhythm and flow. The gate as a guide, not a test.</p>
+
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Gate position</strong></div>
+          <div class="check-sub">Place the 60mm gate 15" in front of the ball, centred on your intended line.</div>
+        </div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Distance</strong></div>
+          <div class="check-sub">Putt from 3–4ft. Close enough that the gate feels comfortable to pass through.</div>
+        </div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Reps</strong></div>
+          <div class="check-sub">10–15 putts. Focus on tempo and follow-through, not gate avoidance.</div>
+        </div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Ready to move on</strong></div>
+          <div class="check-sub">10 clean passes in a row → proceed to 50mm or begin your session.</div>
+        </div>
+      </div>
+
+      <div class="tip-block" style="margin-top:14px;margin-bottom:0">
+        The 60mm gate should feel easy. If you're clipping it regularly, the issue is tension — widen your attention to stroke rhythm rather than the gate itself. A tight grip or hesitant stroke will wander more than a free one.
+      </div>
+    </div>
+
+    <!-- 50mm @ 15" -->
+    <div class="card">
+      <div class="row mb-4">
+        <h3>50mm Gate — 15"</h3>
+        <span class="spacer"></span>
+        <span class="badge badge-gold">Calibration</span>
+      </div>
+      <p class="text-sm text-muted mb-12" style="margin-top:6px">Face angle check. Only 5mm clearance each side.</p>
+
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Gate position</strong></div>
+          <div class="check-sub">Place the 50mm gate 15" in front of the ball, precisely centred on your line.</div>
+        </div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Distance</strong></div>
+          <div class="check-sub">Start from 4ft. Build to 6ft once you're passing cleanly.</div>
+        </div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Reps</strong></div>
+          <div class="check-sub">10–15 putts. Stop before fatigue or frustration sets in.</div>
+        </div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Benchmark</strong></div>
+          <div class="check-sub">15 clean passes from 6ft = excellent session.</div>
+        </div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Clipping one side consistently?</strong></div>
+          <div class="check-sub">That's a setup issue, not a stroke issue. Go to the mirror — check shoulder alignment and eye position before adjusting anything else.</div>
+        </div>
+      </div>
+
+      <div class="tip-block" style="margin-top:14px;margin-bottom:0">
+        The 50mm gate is a calibration tool, not a performance target. A short burst of clean passes tells you what you need to know. More reps than necessary breeds tension and a tentative stroke — the opposite of what you want on the course.
+      </div>
+    </div>
+
+    <!-- 50mm @ 24" -->
+    <div class="card">
+      <div class="row mb-4">
+        <h3>50mm Gate — 24"</h3>
+        <span class="spacer"></span>
+        <span class="badge" style="background:#f0eaf8;color:#7c4dbe">Start-line test</span>
+      </div>
+      <p class="text-sm text-muted mb-12" style="margin-top:6px">Bigger separation reveals path issues the 15" position can mask.</p>
+
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Gate position</strong></div>
+          <div class="check-sub">Move the 50mm gate to 24" in front of the ball — double the usual distance — centred on your line.</div>
+        </div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Distance</strong></div>
+          <div class="check-sub">Putt from 4–6ft. The increased gate distance amplifies any arc drift or path deviation.</div>
+        </div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>Reps</strong></div>
+          <div class="check-sub">8–10 putts. Use this as a diagnostic only — not a warm-up drill.</div>
+        </div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div>
+          <div class="check-label"><strong>What to look for</strong></div>
+          <div class="check-sub">If you're passing 15" cleanly but clipping at 24", your start line is drifting after the gate — face is closing or opening slightly post-impact. Compare with your mirror session.</div>
+        </div>
+      </div>
+
+      <div class="tip-block gold" style="margin-top:14px;margin-bottom:0">
+        This is the toughest gate test in your kit. Passing the 50mm at 24" means your start line is genuinely consistent. Don't use this as a daily drill — save it for when you want honest feedback about where your ball is actually starting.
+      </div>
+    </div>
+
+    <div class="tip-block" style="margin-bottom:8px">
+      <strong>Gate drill order:</strong> 60mm (15") → 50mm (15") → 50mm (24") if needed. Each step adds demand. Stop when you have useful information, not when you've exhausted yourself.
+    </div>
+
+  </div>
+
+  <!-- LADDER REF -->
+  <div class="ref-content" id="ref-ladder-ref">
+    <div class="card">
+      <h3 class="mb-12">Pressure Ladder — How It Works</h3>
+      <div class="row mb-8"><span class="badge badge-green">Level 1</span><span class="spacer"></span><span class="text-sm">3 in a row from <strong>3ft</strong></span></div>
+      <div class="row mb-8"><span class="badge badge-green">Level 2</span><span class="spacer"></span><span class="text-sm">3 in a row from <strong>4ft</strong></span></div>
+      <div class="row mb-8"><span class="badge badge-green">Level 3</span><span class="spacer"></span><span class="text-sm">3 in a row from <strong>5ft</strong></span></div>
+      <div class="row mb-12"><span class="badge badge-gold">Level 4</span><span class="spacer"></span><span class="text-sm">3 in a row from <strong>6ft</strong></span></div>
+      <div class="divider"></div>
+      <p class="text-sm mt-12">Miss at any level → drop back one level and restart that level's streak from zero. The app tracks total putts taken and drop-backs, so you can track efficiency over time, not just completion.</p>
+    </div>
+    <div class="tip-block">
+      <strong>Why it works:</strong> The pressure is cumulative — getting to Level 4 and missing back to Level 3 is far more stressful than starting from scratch. This mimics the feeling of a short putt on the back nine that actually matters.
+    </div>
+    <div class="tip-block gold">
+      <strong>Mindset cue:</strong> Before each putt, pick your spot (not the hole), commit to your line, and then let the stroke happen. The ladder rewards decision-making under pressure, not mechanical perfection.
+    </div>
+    <div class="card">
+      <h3 class="mb-8">Scoring Your Performance</h3>
+      <div class="row mb-8"><span class="text-sm">Completed, ≤20 putts</span><span class="spacer"></span><span class="badge badge-gold">Elite</span></div>
+      <div class="row mb-8"><span class="text-sm">Completed, 21–30 putts</span><span class="spacer"></span><span class="badge badge-green">Solid</span></div>
+      <div class="row"><span class="text-sm">Completed, 30+ putts</span><span class="spacer"></span><span style="font-size:.78rem;color:var(--muted)">Keep working</span></div>
+    </div>
+  </div>
+
+  <!-- PUTTOUT REF -->
+  <div class="ref-content" id="ref-puttout-ref">
+    <div class="card">
+      <h3 class="mb-12">PuttOut Perfect Putt Trainer</h3>
+      <p class="text-sm text-muted mb-12">The trainer rewards centre-face, proper-pace putts. Offline or over-pace — it spits the ball back.</p>
+      <div class="tip-block">
+        <strong>Perfect putt (3pts):</strong> The ball enters the centre and is caught by the micro-target. Requires perfect pace and a square face through impact. Aim for this — don't settle for holed.
+      </div>
+      <div class="tip-block gold">
+        <strong>Holed (1pt):</strong> Ball enters the trainer but doesn't hit the perfect putt zone. Good enough on a real green, but tells you that face or pace was slightly off.
+      </div>
+    </div>
+    <div class="card">
+      <h3 class="mb-12">Gate + PuttOut Combination</h3>
+      <p class="text-sm text-muted mb-12">Place the 50mm or 60mm gate 15" in front of the ball. The gate tests path; the PuttOut tests pace and face.</p>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div><div class="check-label">Gate is centred on your intended line</div></div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div><div class="check-label">PuttOut is 6ft from ball position</div></div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div><div class="check-label">You can see the PuttOut centre through the gate</div></div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-circle" onclick="toggleCheck(this)"></div>
+        <div><div class="check-label">Mat is flat and stable</div></div>
+      </div>
+    </div>
+    <div class="tip-block">
+      <strong>Pace tip:</strong> Aim to hit the PuttOut with enough pace that it would travel 12–18" past the hole on a real green. Too soft and the trainer spits it back even on a good line.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ SESSION LOG -->
+<div id="screen-log" class="screen">
+  <div class="topbar">
+    <div class="row">
+      <span class="topbar-title serif">Session Log</span>
+    </div>
+  </div>
+
+  <div id="log-list">
+    <div class="text-sm text-muted text-center" style="padding:40px 0">No sessions logged yet.</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ SETTINGS -->
+<div id="screen-settings" class="screen">
+  <div class="topbar">
+    <div class="row">
+      <span class="topbar-title serif">Settings</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 class="mb-12">App Info</h3>
+    <div class="settings-row">
+      <div>
+        <div class="settings-label">Version</div>
+      </div>
+      <span class="spacer"></span>
+      <span class="mono text-sm" id="settings-version">v1.0.0</span>
+    </div>
+    <div class="settings-row">
+      <div>
+        <div class="settings-label">Storage</div>
+        <div class="settings-sub">Data stored in browser localStorage</div>
+      </div>
+      <span class="spacer"></span>
+      <span class="mono text-sm" id="settings-storage-size">—</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 class="mb-12">Data</h3>
+    <div class="settings-row">
+      <div>
+        <div class="settings-label">Export progress</div>
+        <div class="settings-sub">Download your data as JSON</div>
+      </div>
+      <span class="spacer"></span>
+      <button class="action-btn" onclick="exportData()">Export</button>
+    </div>
+    <div class="settings-row">
+      <div>
+        <div class="settings-label">Import progress</div>
+        <div class="settings-sub">Restore from a JSON backup</div>
+      </div>
+      <span class="spacer"></span>
+      <button class="action-btn" onclick="document.getElementById('import-input').click()">Import</button>
+    </div>
+    <input type="file" id="import-input" accept=".json" style="display:none" onchange="importData(event)">
+  </div>
+
+  <div class="card">
+    <h3 class="mb-12">Reset</h3>
+    <div class="settings-row">
+      <div>
+        <div class="settings-label">Clear all data</div>
+        <div class="settings-sub">Wipe all sessions and leaderboards</div>
+      </div>
+      <span class="spacer"></span>
+      <button class="action-btn danger" onclick="clearAllData()">Clear</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ NAV BAR -->
+<nav class="nav">
+  <button class="nav-btn active" data-screen="home" onclick="nav('home')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+    </svg>
+    Home
+  </button>
+  <button class="nav-btn" data-screen="log" onclick="nav('log')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+    </svg>
+    Log
+  </button>
+  <button class="nav-btn" data-screen="settings" onclick="nav('settings')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+    </svg>
+    Settings
+  </button>
+</nav>
+
+<!-- ═══════════════════════════════════════════ OVERLAYS -->
+
+<!-- PuttOut finish overlay -->
+<div class="overlay" id="puttout-overlay">
+  <span class="hero-icon"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
+  <div class="overlay-score" id="ov-score"></div>
+  <div class="overlay-label" id="ov-label"></div>
+  <div class="card overlay-breakdown" id="ov-breakdown" style="width:100%;text-align:left"></div>
+
+  <div style="width:100%;margin-bottom:16px">
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:10px;text-align:center">How did that feel?</p>
+    <div class="feel-row" id="ov-feel">
+      <button class="feel-btn" data-feel="1" onclick="selectFeel(this)">😤</button>
+      <button class="feel-btn" data-feel="2" onclick="selectFeel(this)">😕</button>
+      <button class="feel-btn" data-feel="3" onclick="selectFeel(this)">😐</button>
+      <button class="feel-btn" data-feel="4" onclick="selectFeel(this)">🙂</button>
+      <button class="feel-btn" data-feel="5" onclick="selectFeel(this)">😄</button>
+    </div>
+  </div>
+
+  <button class="btn-primary" onclick="savePuttout()">Save & Return</button>
+  <button style="margin-top:10px;padding:12px;width:100%;color:var(--muted);font-size:.85rem" onclick="discardPuttout()">Discard</button>
+</div>
+
+<!-- Ladder complete overlay -->
+<div class="overlay" id="ladder-overlay">
+  <div style="font-size:3rem;margin-bottom:12px">🏆</div>
+  <h2 class="serif mb-8">Ladder Complete!</h2>
+  <div class="overlay-score" id="lov-putts"></div>
+  <div class="overlay-label">total putts taken</div>
+  <div class="card" style="width:100%;margin:20px 0;text-align:left">
+    <div class="row mb-8"><span class="text-sm text-muted">Times dropped back</span><span class="spacer"></span><span class="mono" id="lov-drops"></span></div>
+    <div class="row"><span class="text-sm text-muted">Personal best</span><span class="spacer"></span><span class="mono text-accent" id="lov-pb"></span></div>
+  </div>
+  <button class="btn-primary" onclick="saveLadder()">Save & Return</button>
+  <button style="margin-top:10px;padding:12px;width:100%;color:var(--muted);font-size:.85rem" onclick="discardLadder()">Discard</button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ═══════════════════════════════════════════ SCRIPT -->
+<script>
+// ── VERSION ──────────────────────────────────────────────
+const APP_VERSION = 'v1.3.3';
+
+// ── STORAGE ──────────────────────────────────────────────
+const STORAGE_KEY = 'putting_lab_data';
+
+function loadData() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultData();
+  } catch { return defaultData(); }
+}
+
+function saveData(d) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+}
+
+function defaultData() {
+  return {
+    version: APP_VERSION,
+    sessions: [],
+    puttout_leaderboards: { open: [], '60mm': [], '50mm': [] },
+    ladder_pb: null,
+    make_pct_history: []
+  };
+}
+
+let data = loadData();
+
+// ── WAKE LOCK ────────────────────────────────────────────
+let wakeLock = null;
+const WAKE_LOCK_SCREENS = ['puttout', 'ladder', 'make-pct'];
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  if (wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => {
+      wakeLock = null;
+    });
+  } catch (err) {
+    console.log('Wake lock failed:', err);
+  }
+}
+
+async function releaseWakeLock() {
+  if (!wakeLock) return;
+  try {
+    await wakeLock.release();
+  } catch (err) {
+    console.log('Wake lock release failed:', err);
+  } finally {
+    wakeLock = null;
+  }
+}
+
+function syncWakeLock(screen) {
+  if (WAKE_LOCK_SCREENS.includes(screen)) {
+    requestWakeLock();
+  } else {
+    releaseWakeLock();
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  const activeScreen = document.querySelector('.screen.active');
+  if (document.visibilityState === 'visible' && activeScreen) {
+    const screen = activeScreen.id.replace('screen-', '');
+    if (WAKE_LOCK_SCREENS.includes(screen)) requestWakeLock();
+  } else {
+    releaseWakeLock();
+  }
+});
+
+// ── NAV ──────────────────────────────────────────────────
+const SCREENS = ['home','puttout','ladder','make-pct','reference','log','settings'];
+
+function nav(screen) {
+  SCREENS.forEach(s => {
+    const el = document.getElementById('screen-' + s);
+    if (el) el.classList.remove('active');
+  });
+  const target = document.getElementById('screen-' + screen);
+  if (target) {
+    target.classList.add('active');
+    target.scrollTop = 0;
+    window.scrollTo(0, 0);
+  }
+  syncWakeLock(screen);
+  // update nav bar
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.screen === screen);
+  });
+  // refresh screens
+  if (screen === 'home') renderHome();
+  if (screen === 'log') renderLog();
+  if (screen === 'settings') renderSettings();
+  if (screen === 'puttout') renderPuttoutSetup();
+  if (screen === 'ladder') renderLadderSetup();
+  if (screen === 'make-pct') initMakePct();
+}
+
+// ── HOME ──────────────────────────────────────────────────
+function renderHome() {
+  document.getElementById('home-version').textContent = APP_VERSION;
+  document.getElementById('settings-version').textContent = APP_VERSION;
+
+  const totalSessions = data.sessions.length;
+  document.getElementById('stat-sessions').textContent = totalSessions;
+
+  // best puttout score across all modes
+  let bestScore = null;
+  ['open','60mm','50mm'].forEach(mode => {
+    const lb = data.puttout_leaderboards[mode] || [];
+    if (lb.length) {
+      const top = lb[0].score;
+      if (bestScore === null || top > bestScore) bestScore = top;
+    }
+  });
+  document.getElementById('stat-best').textContent = bestScore !== null ? bestScore : '—';
+  document.getElementById('stat-streak').textContent = data.ladder_pb !== null ? data.ladder_pb + 'p' : '—';
+
+  // Recent sessions
+  const recent = data.sessions.slice(-5).reverse();
+  const container = document.getElementById('home-recent-list');
+  const card = document.getElementById('home-recent');
+  if (recent.length === 0) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  container.innerHTML = recent.map(s => `
+    <div class="log-entry">
+      <div class="log-drill">${s.type}</div>
+      <div class="log-result">${formatSessionResult(s)}</div>
+      <div class="log-meta">${formatDate(s.date)}</div>
+    </div>
+  `).join('');
+}
+
+function formatSessionResult(s) {
+  if (s.type === 'PuttOut Game') return `${s.score}/60 pts · ${s.difficulty}`;
+  if (s.type === 'Pressure Ladder') {
+    if (s.completed) return `Completed in ${s.putts} putts`;
+    return `Reached Level ${s.level} — ${s.putts} putts`;
+  }
+  if (s.type === 'Make % Tracker') {
+    const parts = [];
+    if (s.results['3ft'] != null) parts.push(`3ft: ${s.results['3ft']}/5`);
+    if (s.results['4.5ft'] != null) parts.push(`4.5ft: ${s.results['4.5ft']}/5`);
+    if (s.results['6ft'] != null) parts.push(`6ft: ${s.results['6ft']}/5`);
+    return parts.join(' · ');
+  }
+  return '';
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// ── PUTTOUT GAME ──────────────────────────────────────────
+let puttoutState = {
+  diff: 'open',
+  shots: [],
+  score: 0
+};
+
+function selectDiff(btn, diff) {
+  document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  puttoutState.diff = diff;
+  document.getElementById('gate-note').style.display = diff === 'open' ? 'none' : 'flex';
+  document.getElementById('max-score-label').textContent = '60 pts';
+  document.getElementById('lb-diff-label').textContent = diff === 'open' ? 'Open' : diff + ' gate';
+  renderLeaderboard();
+}
+
+function renderPuttoutSetup() {
+  document.getElementById('puttout-setup').classList.remove('hidden');
+  document.getElementById('puttout-game').classList.add('hidden');
+  renderLeaderboard();
+}
+
+function getPuttoutCounts(entry) {
+  if (entry.counts) {
+    return {
+      perfect: entry.counts.perfect || 0,
+      holed: entry.counts.holed || 0,
+      miss: entry.counts.miss || 0
+    };
+  }
+  const shots = entry.shots || [];
+  return {
+    perfect: shots.filter(type => type === 'perfect').length,
+    holed: shots.filter(type => type === 'holed').length,
+    miss: shots.filter(type => type === 'miss').length
+  };
+}
+
+function renderLeaderboard() {
+  const lb = (data.puttout_leaderboards[puttoutState.diff] || []).slice(0, 5);
+  const container = document.getElementById('leaderboard-list');
+  if (lb.length === 0) {
+    container.innerHTML = '<div class="text-sm text-muted text-center" style="padding:20px 0">No scores yet — play your first round!</div>';
+    return;
+  }
+  container.innerHTML = lb.map((entry, i) => {
+    const counts = getPuttoutCounts(entry);
+    return `
+      <div class="lb-row">
+        <span class="lb-rank ${i < 3 ? 'top' : ''}">${i + 1}</span>
+        <div>
+          <div class="lb-score">${entry.score}</div>
+          <div class="lb-meta">${formatDate(entry.date)} ${entry.feel ? feelEmoji(entry.feel) : ''}</div>
+          <div class="lb-split"><strong>${counts.perfect}</strong> perfect · <strong>${counts.holed}</strong> holed · <strong>${counts.miss}</strong> missed</div>
+        </div>
+        <div class="lb-pct">${Math.round(entry.score / 60 * 100)}%</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function startPuttout() {
+  puttoutState.shots = [];
+  puttoutState.score = 0;
+  document.getElementById('puttout-setup').classList.add('hidden');
+  document.getElementById('puttout-game').classList.remove('hidden');
+  document.getElementById('miss-label').textContent = puttoutState.diff === 'open' ? 'Miss' : 'Miss / Gate';
+  renderPuttoutGame();
+}
+
+function renderPuttoutGame() {
+  const shots = puttoutState.shots;
+  const score = shots.reduce((a, s) => a + s.pts, 0);
+  const remaining = 20 - shots.length;
+  document.getElementById('g-score').textContent = score;
+  document.getElementById('g-shots-left').textContent = remaining;
+  document.getElementById('g-ct-perfect').textContent = shots.filter(s => s.type === 'perfect').length;
+  document.getElementById('g-ct-holed').textContent = shots.filter(s => s.type === 'holed').length;
+  document.getElementById('g-ct-miss').textContent = shots.filter(s => s.type === 'miss').length;
+
+  // dots
+  const bar = document.getElementById('g-shots-bar');
+  bar.innerHTML = '';
+  for (let i = 0; i < 20; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'shot-dot';
+    if (i < shots.length) dot.classList.add(shots[i].type);
+    bar.appendChild(dot);
+  }
+}
+
+function recordShot(pts, type) {
+  if (puttoutState.shots.length >= 20) return;
+  puttoutState.shots.push({ pts, type });
+  renderPuttoutGame();
+  if (puttoutState.shots.length === 20) {
+    setTimeout(showPuttoutFinish, 400);
+  }
+}
+
+function undoShot() {
+  if (puttoutState.shots.length === 0) return;
+  puttoutState.shots.pop();
+  renderPuttoutGame();
+}
+
+function showPuttoutFinish() {
+  const shots = puttoutState.shots;
+  const score = shots.reduce((a, s) => a + s.pts, 0);
+  const perfect = shots.filter(s => s.type === 'perfect').length;
+  const holed   = shots.filter(s => s.type === 'holed').length;
+  const miss    = shots.filter(s => s.type === 'miss').length;
+  const pct = Math.round(score / 60 * 100);
+
+  document.getElementById('ov-score').textContent = score;
+  document.getElementById('ov-label').textContent = `out of 60 pts (${pct}%) · ${puttoutState.diff === 'open' ? 'Open' : puttoutState.diff + ' gate'}`;
+
+  const bd = document.getElementById('ov-breakdown');
+  bd.innerHTML = `
+    <div class="overlay-bd-row"><span>Perfect putts</span><span class="mono">${perfect} × 3 = ${perfect*3}pts</span></div>
+    <div class="overlay-bd-row"><span>Holed</span><span class="mono">${holed} × 1 = ${holed}pts</span></div>
+    <div class="overlay-bd-row"><span>Miss / Gate clip</span><span class="mono">${miss}</span></div>
+    <div class="overlay-bd-row"><span><strong>Total</strong></span><span class="mono"><strong>${score}</strong></span></div>
+  `;
+
+  // reset feel
+  document.querySelectorAll('.feel-btn').forEach(b => b.classList.remove('selected'));
+  puttoutState.feel = null;
+
+  document.getElementById('puttout-overlay').classList.add('show');
+}
+
+function selectFeel(btn) {
+  document.querySelectorAll('.feel-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  puttoutState.feel = parseInt(btn.dataset.feel);
+}
+
+function feelEmoji(n) {
+  return ['','😤','😕','😐','🙂','😄'][n] || '';
+}
+
+function savePuttout() {
+  const shots = puttoutState.shots;
+  const score = shots.reduce((a, s) => a + s.pts, 0);
+  const counts = {
+    perfect: shots.filter(s => s.type === 'perfect').length,
+    holed: shots.filter(s => s.type === 'holed').length,
+    miss: shots.filter(s => s.type === 'miss').length
+  };
+  const entry = {
+    score,
+    date: new Date().toISOString(),
+    difficulty: puttoutState.diff,
+    feel: puttoutState.feel,
+    counts,
+    shots: shots.map(s => s.type)
+  };
+
+  // add to leaderboard
+  const lb = data.puttout_leaderboards[puttoutState.diff];
+  lb.push(entry);
+  lb.sort((a, b) => b.score - a.score);
+  data.puttout_leaderboards[puttoutState.diff] = lb.slice(0, 5);
+
+  // session log
+  data.sessions.push({
+    type: 'PuttOut Game',
+    date: entry.date,
+    score,
+    difficulty: puttoutState.diff === 'open' ? 'Open' : puttoutState.diff + ' gate',
+    feel: puttoutState.feel,
+    counts
+  });
+
+  saveData(data);
+  document.getElementById('puttout-overlay').classList.remove('show');
+  toast('Score saved!');
+  nav('home');
+}
+
+function discardPuttout() {
+  document.getElementById('puttout-overlay').classList.remove('show');
+  nav('home');
+}
+
+// ── PRESSURE LADDER ───────────────────────────────────────
+const LADDER_LEVELS = [
+  { dist: '3ft', label: '3ft' },
+  { dist: '4ft', label: '4ft' },
+  { dist: '5ft', label: '5ft' },
+  { dist: '6ft', label: '6ft' }
+];
+
+let ladderState = {
+  levelIdx: 0,
+  streak: 0,
+  totalPutts: 0,
+  drops: 0,
+  history: [] // {levelIdx, made}
+};
+
+function renderLadderSetup() {
+  document.getElementById('ladder-setup').classList.remove('hidden');
+  document.getElementById('ladder-game').classList.add('hidden');
+  const pb = data.ladder_pb;
+  document.getElementById('ladder-pb-display').textContent = pb !== null ? pb + ' putts' : '—';
+}
+
+function startLadder() {
+  ladderState = { levelIdx: 0, streak: 0, totalPutts: 0, drops: 0, history: [] };
+  document.getElementById('ladder-setup').classList.add('hidden');
+  document.getElementById('ladder-game').classList.remove('hidden');
+  renderLadderGame();
+}
+
+function renderLadderGame() {
+  const level = LADDER_LEVELS[ladderState.levelIdx];
+  document.getElementById('l-dist').textContent = level.dist;
+  document.getElementById('l-subtitle').textContent = `${ladderState.streak}/3 in a row to advance`;
+  document.getElementById('l-total-putts').textContent = ladderState.totalPutts;
+  document.getElementById('l-drops').textContent = ladderState.drops;
+
+  // streak dots
+  const streakEl = document.getElementById('l-streak');
+  streakEl.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'streak-dot' + (i < ladderState.streak ? ' made' : '');
+    streakEl.appendChild(dot);
+  }
+
+  // level steps
+  const stepsEl = document.getElementById('l-steps');
+  stepsEl.innerHTML = LADDER_LEVELS.map((l, i) => `
+    <div class="ladder-step ${i < ladderState.levelIdx ? 'done' : i === ladderState.levelIdx ? 'current' : ''}">${l.dist}</div>
+  `).join('');
+}
+
+function ladderShot(made) {
+  ladderState.history.push({ levelIdx: ladderState.levelIdx, streak: ladderState.streak, made, drops: ladderState.drops });
+  ladderState.totalPutts++;
+
+  if (made) {
+    ladderState.streak++;
+    if (ladderState.streak >= 3) {
+      ladderState.levelIdx++;
+      ladderState.streak = 0;
+      if (ladderState.levelIdx >= LADDER_LEVELS.length) {
+        // Complete!
+        showLadderComplete();
+        return;
+      }
+    }
+  } else {
+    ladderState.drops++;
+    if (ladderState.levelIdx > 0) ladderState.levelIdx--;
+    ladderState.streak = 0;
+  }
+  renderLadderGame();
+}
+
+function undoLadder() {
+  if (ladderState.history.length === 0) return;
+  const prev = ladderState.history.pop();
+  ladderState.levelIdx = prev.levelIdx;
+  ladderState.streak = prev.streak;
+  ladderState.drops = prev.drops;
+  ladderState.totalPutts--;
+  renderLadderGame();
+}
+
+function showLadderComplete() {
+  const putts = ladderState.totalPutts;
+  const pb = data.ladder_pb;
+  const isNewPB = pb === null || putts < pb;
+  document.getElementById('lov-putts').textContent = putts;
+  document.getElementById('lov-drops').textContent = ladderState.drops;
+  document.getElementById('lov-pb').textContent = isNewPB ? '🏆 New PB!' : (pb + ' putts');
+  document.getElementById('ladder-overlay').classList.add('show');
+}
+
+function saveLadder() {
+  const putts = ladderState.totalPutts;
+  if (data.ladder_pb === null || putts < data.ladder_pb) data.ladder_pb = putts;
+  data.sessions.push({
+    type: 'Pressure Ladder',
+    date: new Date().toISOString(),
+    completed: true,
+    putts,
+    drops: ladderState.drops,
+    level: 4
+  });
+  saveData(data);
+  document.getElementById('ladder-overlay').classList.remove('show');
+  toast('Ladder saved!');
+  nav('home');
+}
+
+function discardLadder() {
+  document.getElementById('ladder-overlay').classList.remove('show');
+  nav('home');
+}
+
+// ── MAKE % TRACKER ────────────────────────────────────────
+let makePctState = {
+  currentDist: '3ft',
+  results: { '3ft': null, '4.5ft': null, '6ft': null },
+  balls: { '3ft': [], '4.5ft': [], '6ft': [] }
+};
+let makeChartDist = '3ft';
+
+function initMakePct() {
+  makePctState = {
+    currentDist: '3ft',
+    results: { '3ft': null, '4.5ft': null, '6ft': null },
+    balls: { '3ft': [false,false,false,false,false], '4.5ft': [false,false,false,false,false], '6ft': [false,false,false,false,false] }
+  };
+  renderMakeBalls();
+  renderMakeResults();
+  renderMakeHistory();
+  document.getElementById('make-log-btn').disabled = true;
+
+  // reset dist tabs
+  document.querySelectorAll('#screen-make-pct .dist-tabs:first-of-type .dist-tab').forEach((t, i) => {
+    t.classList.toggle('active', i === 0);
+  });
+}
+
+function selectMakeDist(btn, dist) {
+  makePctState.currentDist = dist;
+  document.querySelectorAll('#screen-make-pct .dist-tabs:first-of-type .dist-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderMakeBalls();
+}
+
+function renderMakeBalls() {
+  const dist = makePctState.currentDist;
+  const balls = makePctState.balls[dist];
+  const container = document.getElementById('make-balls-row');
+  container.innerHTML = '';
+  balls.forEach((made, i) => {
+    const ball = document.createElement('div');
+    ball.className = 'make-ball' + (made ? ' made' : '');
+    ball.onclick = () => toggleBall(i);
+    container.appendChild(ball);
+  });
+  const count = balls.filter(Boolean).length;
+  document.getElementById('make-running').textContent = count + ' / 5';
+  document.getElementById('make-dist-label').textContent = `Recording from ${dist} — tap each ball to toggle`;
+}
+
+function toggleBall(i) {
+  const dist = makePctState.currentDist;
+  makePctState.balls[dist][i] = !makePctState.balls[dist][i];
+  // save result for this dist
+  makePctState.results[dist] = makePctState.balls[dist].filter(Boolean).length;
+  renderMakeBalls();
+  renderMakeResults();
+  checkMakeLogReady();
+}
+
+function renderMakeResults() {
+  ['3ft','4.5ft','6ft'].forEach(d => {
+    const val = makePctState.results[d];
+    const key = d === '4.5ft' ? '4hft' : d.replace('.','');
+    const el = document.getElementById(`make-result-${key}`);
+    if (el) el.textContent = val !== null ? `${val}/5 (${val*20}%)` : '—';
+  });
+}
+
+function checkMakeLogReady() {
+  const hasAny = Object.values(makePctState.results).some(v => v !== null);
+  document.getElementById('make-log-btn').disabled = !hasAny;
+}
+
+function logMakePct() {
+  const results = {};
+  ['3ft','4.5ft','6ft'].forEach(d => {
+    if (makePctState.results[d] !== null) results[d] = makePctState.results[d];
+  });
+
+  const entry = {
+    date: new Date().toISOString(),
+    results
+  };
+  data.make_pct_history.push(entry);
+  data.sessions.push({
+    type: 'Make % Tracker',
+    date: entry.date,
+    results
+  });
+  saveData(data);
+  toast('Session logged!');
+  initMakePct();
+  renderMakeHistory();
+}
+
+function renderMakeHistory() {
+  const history = data.make_pct_history;
+  const card = document.getElementById('make-history-card');
+  if (history.length === 0) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  renderMakeChart(makeChartDist);
+}
+
+function selectChartDist(btn, dist) {
+  makeChartDist = dist;
+  document.querySelectorAll('#make-history-card .dist-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderMakeChart(dist);
+}
+
+function renderMakeChart(dist) {
+  const history = data.make_pct_history.filter(h => h.results[dist] != null).slice(-10);
+  const chart = document.getElementById('make-chart');
+  chart.innerHTML = '';
+  if (history.length === 0) { chart.innerHTML = '<div class="text-sm text-muted" style="padding:20px">No data for this distance yet.</div>'; return; }
+  const max = 5;
+  history.forEach(h => {
+    const val = h.results[dist];
+    const pct = (val / max) * 100;
+    const bar = document.createElement('div');
+    bar.className = 'chart-bar';
+    bar.style.height = Math.max(4, pct * 0.8) + 'px';
+    const tip = document.createElement('div');
+    tip.className = 'chart-tip';
+    tip.textContent = `${val}/5 · ${formatDate(h.date)}`;
+    bar.appendChild(tip);
+    chart.appendChild(bar);
+  });
+}
+
+// ── REFERENCE ─────────────────────────────────────────────
+function selectRef(btn, id) {
+  document.querySelectorAll('.ref-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.ref-content').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('ref-' + id).classList.add('active');
+}
+
+function toggleCheck(circle) {
+  circle.classList.toggle('checked');
+}
+
+// ── LOG SCREEN ────────────────────────────────────────────
+function renderLog() {
+  const container = document.getElementById('log-list');
+  if (data.sessions.length === 0) {
+    container.innerHTML = '<div class="text-sm text-muted text-center" style="padding:40px 0">No sessions logged yet.</div>';
+    return;
+  }
+  const sorted = [...data.sessions].reverse();
+  container.innerHTML = sorted.map(s => `
+    <div class="log-entry">
+      <div class="log-drill">${s.type}</div>
+      <div class="log-result">${formatSessionResult(s)}${s.feel ? ' <span class="feel-emoji">' + feelEmoji(s.feel) + '</span>' : ''}</div>
+      <div class="log-meta">${formatDate(s.date)}</div>
+    </div>
+  `).join('');
+}
+
+// ── SETTINGS ──────────────────────────────────────────────
+function renderSettings() {
+  const raw = localStorage.getItem(STORAGE_KEY) || '';
+  const kb = (new Blob([raw]).size / 1024).toFixed(1);
+  document.getElementById('settings-storage-size').textContent = kb + ' KB';
+}
+
+function exportData() {
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `putting-lab-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Export downloaded!');
+}
+
+function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!imported.sessions) throw new Error('Invalid format');
+      data = imported;
+      saveData(data);
+      toast('Data imported successfully!');
+      renderHome();
+    } catch {
+      toast('Import failed — invalid file');
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function clearAllData() {
+  if (!confirm('This will permanently delete all your sessions and leaderboards. Are you sure?')) return;
+  data = defaultData();
+  saveData(data);
+  toast('All data cleared.');
+  renderHome();
+  renderSettings();
+}
+
+// ── TOAST ─────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ── SERVICE WORKER ────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(err => {
+    console.log('SW registration failed (local dev?):', err);
+  });
+}
+
+// ── INIT ──────────────────────────────────────────────────
+document.getElementById('home-version').textContent = APP_VERSION;
+renderHome();
+</script>
+</body>
+</html>
